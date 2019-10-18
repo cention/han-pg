@@ -127,7 +127,7 @@ func (m *m2mModel) AfterDelete(c context.Context, db DB) error {
 	return nil
 }
 
-func (m *m2mModel) ScanColumn(colIdx int, colName string, rd types.Reader, n int) error {
+func (m *m2mModel) ScanColumn(colIdx int, colName string, colType uint32, rd types.Reader, n int) error {
 	ok, err := m.sliceTableModel.scanColumn(colIdx, colName, rd, n)
 	if ok {
 		return err

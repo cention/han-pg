@@ -231,7 +231,7 @@ func (m *structTableModel) AfterDelete(ctx context.Context, db DB) error {
 }
 
 func (m *structTableModel) ScanColumn(
-	colIdx int, colName string, rd types.Reader, n int,
+	colIdx int, colName string, colType uint32, rd types.Reader, n int,
 ) error {
 	ok, err := m.scanColumn(colIdx, colName, rd, n)
 	if ok {

@@ -480,62 +480,63 @@ func writeParseDescribeSyncMsg(buf *pool.WriteBuffer, name, q string) {
 	writeSyncMsg(buf)
 }
 
-func readParseDescribeSync(rd *internal.BufReader) ([][]byte, error) {
+func readParseDescribeSync(rd *internal.BufReader) ([][]byte, []uint32, error) {
 	var columns [][]byte
+	var typeIds []uint32
 	var firstErr error
 	for {
 		c, msgLen, err := readMessageType(rd)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		switch c {
 		case parseCompleteMsg:
 			_, err = rd.ReadN(msgLen)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		case rowDescriptionMsg: // Response to the DESCRIBE message.
-			columns, err = readRowDescription(rd, nil)
+			columns, typeIds, err = readRowDescription(rd, nil, nil)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		case parameterDescriptionMsg: // Response to the DESCRIBE message.
 			_, err := rd.ReadN(msgLen)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		case noDataMsg: // Response to the DESCRIBE message.
 			_, err := rd.ReadN(msgLen)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		case readyForQueryMsg:
 			_, err := rd.ReadN(msgLen)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			if firstErr != nil {
-				return nil, firstErr
+				return nil, nil, firstErr
 			}
-			return columns, err
+			return columns, typeIds, err
 		case errorResponseMsg:
 			e, err := readError(rd)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			if firstErr == nil {
 				firstErr = e
 			}
 		case noticeResponseMsg:
 			if err := logNotice(rd, msgLen); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		case parameterStatusMsg:
 			if err := logParameterStatus(rd, msgLen); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		default:
-			return nil, fmt.Errorf("pg: readParseDescribeSync: unexpected message %q", c)
+			return nil, nil, fmt.Errorf("pg: readParseDescribeSync: unexpected message %q", c)
 		}
 	}
 }
@@ -735,27 +736,33 @@ func readExtQuery(rd *internal.BufReader) (*result, error) {
 	}
 }
 
-func readRowDescription(rd *internal.BufReader, columns [][]byte) ([][]byte, error) {
+func readRowDescription(rd *internal.BufReader, columns [][]byte, typeids []uint32) ([][]byte, []uint32, error) {
 	colNum, err := readInt16(rd)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	columns = setByteSliceLen(columns, int(colNum))
 	for i := 0; i < int(colNum); i++ {
 		b, err := rd.ReadSlice(0)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		columns[i] = append(columns[i][:0], b[:len(b)-1]...)
-
-		_, err = rd.ReadN(18)
-		if err != nil {
-			return nil, err
+		if _, err = rd.ReadN(6); err != nil {
+			return nil, nil, err
+		}
+		if rawType, err := rd.ReadN(4); err != nil {
+			return nil, nil, err
+		} else {
+			typeids = append(typeids, uint32(rawType[3])|uint32(rawType[2])<<8|uint32(rawType[1])<<16|uint32(rawType[0])<<24)
+		}
+		if _, err = rd.ReadN(8); err != nil {
+			return nil, nil, err
 		}
 	}
 
-	return columns, nil
+	return columns, typeids, nil
 }
 
 func setByteSliceLen(b [][]byte, n int) [][]byte {
@@ -767,7 +774,7 @@ func setByteSliceLen(b [][]byte, n int) [][]byte {
 	return b
 }
 
-func readDataRow(rd *internal.BufReader, scanner orm.ColumnScanner, columns [][]byte) error {
+func readDataRow(rd *internal.BufReader, scanner orm.ColumnScanner, columns [][]byte, typeIds []uint32) error {
 	colNum, err := readInt16(rd)
 	if err != nil {
 		return err
@@ -794,7 +801,7 @@ func readDataRow(rd *internal.BufReader, scanner orm.ColumnScanner, columns [][]
 			colRd = rd.BytesReader(0)
 		}
 
-		err = scanner.ScanColumn(int(colIdx), column, colRd, int(n))
+		err = scanner.ScanColumn(int(colIdx), column, typeIds[colIdx], colRd, int(n))
 		if err != nil && firstErr == nil {
 			firstErr = internal.Errorf(err.Error())
 		}
@@ -832,7 +839,7 @@ func readSimpleQueryData(rd *internal.BufReader, mod interface{}) (*result, erro
 
 		switch c {
 		case rowDescriptionMsg:
-			rd.Columns, err = readRowDescription(rd, rd.Columns[:0])
+			rd.Columns, rd.TypeIds, err = readRowDescription(rd, rd.Columns[:0], rd.TypeIds[:0])
 			if err != nil {
 				return nil, err
 			}
@@ -849,7 +856,7 @@ func readSimpleQueryData(rd *internal.BufReader, mod interface{}) (*result, erro
 			}
 		case dataRowMsg:
 			m := res.model.NewModel()
-			if err := readDataRow(rd, m, rd.Columns); err != nil {
+			if err := readDataRow(rd, m, rd.Columns, rd.TypeIds); err != nil {
 				if firstErr == nil {
 					firstErr = err
 				}
@@ -903,7 +910,7 @@ func readSimpleQueryData(rd *internal.BufReader, mod interface{}) (*result, erro
 	}
 }
 
-func readExtQueryData(rd *internal.BufReader, mod interface{}, columns [][]byte) (*result, error) {
+func readExtQueryData(rd *internal.BufReader, mod interface{}, columns [][]byte, typeIds []uint32) (*result, error) {
 	var res result
 	var firstErr error
 	for {
@@ -931,7 +938,7 @@ func readExtQueryData(rd *internal.BufReader, mod interface{}, columns [][]byte)
 			}
 
 			m := res.model.NewModel()
-			if err := readDataRow(rd, m, columns); err != nil {
+			if err := readDataRow(rd, m, columns, typeIds); err != nil {
 				if firstErr == nil {
 					firstErr = err
 				}

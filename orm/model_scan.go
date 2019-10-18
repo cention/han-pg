@@ -29,7 +29,7 @@ func (m scanValuesModel) NewModel() ColumnScanner {
 	return m
 }
 
-func (m scanValuesModel) ScanColumn(colIdx int, colName string, rd types.Reader, n int) error {
+func (m scanValuesModel) ScanColumn(colIdx int, colName string, colType uint32, rd types.Reader, n int) error {
 	if colIdx >= len(m.values) {
 		return fmt.Errorf("pg: no Scan var for column index=%d name=%q",
 			colIdx, colName)
@@ -60,7 +60,7 @@ func (m scanReflectValuesModel) NewModel() ColumnScanner {
 	return m
 }
 
-func (m scanReflectValuesModel) ScanColumn(colIdx int, colName string, rd types.Reader, n int) error {
+func (m scanReflectValuesModel) ScanColumn(colIdx int, colName string, colType uint32, rd types.Reader, n int) error {
 	if colIdx >= len(m.values) {
 		return fmt.Errorf("pg: no Scan var for column index=%d name=%q",
 			colIdx, colName)

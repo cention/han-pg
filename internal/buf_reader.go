@@ -14,6 +14,7 @@ const defaultBufSize = 65536
 
 type BufReader struct {
 	Columns [][]byte
+	TypeIds []uint32
 
 	rd io.Reader // reader provided by the client
 

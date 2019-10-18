@@ -540,26 +540,27 @@ func (db *baseDB) Prepare(q string) (*Stmt, error) {
 
 func (db *baseDB) prepare(
 	c context.Context, cn *pool.Conn, q string,
-) (string, [][]byte, error) {
+) (string, [][]byte, []uint32, error) {
 	name := cn.NextID()
 	err := cn.WithWriter(c, db.opt.WriteTimeout, func(wb *pool.WriteBuffer) error {
 		writeParseDescribeSyncMsg(wb, name, q)
 		return nil
 	})
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
 
 	var columns [][]byte
+	var typeIds []uint32
 	err = cn.WithReader(c, db.opt.ReadTimeout, func(rd *internal.BufReader) error {
-		columns, err = readParseDescribeSync(rd)
+		columns, typeIds, err = readParseDescribeSync(rd)
 		return err
 	})
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
 
-	return name, columns, nil
+	return name, columns, typeIds, nil
 }
 
 func (db *baseDB) closeStmt(c context.Context, cn *pool.Conn, name string) error {

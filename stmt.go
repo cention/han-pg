@@ -21,6 +21,7 @@ type Stmt struct {
 	q       string
 	name    string
 	columns [][]byte
+	typeIds []uint32
 }
 
 func prepareStmt(db *baseDB, q string) (*Stmt, error) {
@@ -53,7 +54,7 @@ func (stmt *Stmt) prepare(c context.Context, q string) error {
 
 		lastErr = stmt.withConn(c, func(c context.Context, cn *pool.Conn) error {
 			var err error
-			stmt.name, stmt.columns, err = stmt.db.prepare(c, cn, q)
+			stmt.name, stmt.columns, stmt.typeIds, err = stmt.db.prepare(c, cn, q)
 			return err
 		})
 		if !stmt.db.shouldRetry(lastErr) {
@@ -159,7 +160,7 @@ func (stmt *Stmt) query(c context.Context, model interface{}, params ...interfac
 		}
 
 		lastErr = stmt.withConn(c, func(c context.Context, cn *pool.Conn) error {
-			res, err = stmt.extQueryData(c, cn, stmt.name, model, stmt.columns, params...)
+			res, err = stmt.extQueryData(c, cn, stmt.name, model, stmt.columns, stmt.typeIds, params...)
 			if err := stmt.db.afterQuery(c, evt, res, err); err != nil {
 				return err
 			}
@@ -255,6 +256,7 @@ func (stmt *Stmt) extQueryData(
 	name string,
 	model interface{},
 	columns [][]byte,
+	typeIds []uint32,
 	params ...interface{},
 ) (Result, error) {
 	err := cn.WithWriter(c, stmt.db.opt.WriteTimeout, func(wb *pool.WriteBuffer) error {
@@ -266,7 +268,7 @@ func (stmt *Stmt) extQueryData(
 
 	var res Result
 	err = cn.WithReader(c, stmt.db.opt.ReadTimeout, func(rd *internal.BufReader) error {
-		res, err = readExtQueryData(rd, model, columns)
+		res, err = readExtQueryData(rd, model, columns, typeIds)
 		return err
 	})
 	if err != nil {

@@ -35,6 +35,14 @@ func MakeSliceNextElemFunc(v reflect.Value) func() reflect.Value {
 		}
 	}
 
+	if elemType.Kind() == reflect.Map {
+		return func() reflect.Value {
+			elem := reflect.MakeMap(elemType)
+			v.Set(reflect.Append(v, elem))
+			return elem
+		}
+	}
+
 	zero := reflect.Zero(elemType)
 	return func() reflect.Value {
 		if v.Len() < v.Cap() {

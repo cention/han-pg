@@ -13,7 +13,7 @@ type ColumnScanner interface {
 	//
 	// An error should be returned if the value can not be stored
 	// without loss of information.
-	ScanColumn(colIdx int, colName string, rd types.Reader, n int) error
+	ScanColumn(colIdx int, colName string, colType uint32, rd types.Reader, n int) error
 }
 
 type QueryAppender interface {
