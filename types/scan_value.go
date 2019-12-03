@@ -240,7 +240,7 @@ func scanJSONValue(v reflect.Value, rd Reader, n int) error {
 	// TODO: better handle slices
 	v.Set(reflect.New(v.Type()).Elem())
 
-	if n == -1 {
+	if n == -1 || n == 0 {
 		return nil
 	}
 
