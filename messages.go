@@ -831,6 +831,8 @@ func newModel(mod interface{}) (orm.Model, error) {
 func readSimpleQueryData(rd *internal.BufReader, mod interface{}) (*result, error) {
 	var res result
 	var firstErr error
+	rd.Columns = make([][]byte, 0)
+	rd.TypeIds = make([]uint32, 0)
 	for {
 		c, msgLen, err := readMessageType(rd)
 		if err != nil {
@@ -839,7 +841,7 @@ func readSimpleQueryData(rd *internal.BufReader, mod interface{}) (*result, erro
 
 		switch c {
 		case rowDescriptionMsg:
-			rd.Columns, rd.TypeIds, err = readRowDescription(rd, rd.Columns[:0], rd.TypeIds[:0])
+			rd.Columns, rd.TypeIds, err = readRowDescription(rd, rd.Columns, rd.TypeIds)
 			if err != nil {
 				return nil, err
 			}
