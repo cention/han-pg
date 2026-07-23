@@ -239,20 +239,31 @@ func readAuthOK(rd *internal.BufReader) error {
 func (db *baseDB) authSASL(
 	c context.Context, cn *pool.Conn, rd *internal.BufReader, user, password string,
 ) error {
-	s, err := readString(rd)
-	if err != nil {
-		return err
+	// The server sends a null-terminated list of supported mechanisms,
+	// terminated by an empty string. Over TLS it advertises
+	// SCRAM-SHA-256-PLUS (channel binding) first, then SCRAM-SHA-256.
+	// We only implement SCRAM-SHA-256, which the protocol lets the
+	// client select as long as the server advertised it.
+	var mechanisms []string
+	for {
+		s, err := readString(rd)
+		if err != nil {
+			return err
+		}
+		if s == "" {
+			break
+		}
+		mechanisms = append(mechanisms, s)
 	}
-	if s != "SCRAM-SHA-256" {
-		return fmt.Errorf("pg: SASL: got %q, wanted %q", s, "SCRAM-SHA-256")
+	supported := false
+	for _, m := range mechanisms {
+		if m == "SCRAM-SHA-256" {
+			supported = true
+			break
+		}
 	}
-
-	c0, err := rd.ReadByte()
-	if err != nil {
-		return err
-	}
-	if c0 != 0 {
-		return fmt.Errorf("pg: SASL: got %q, wanted %q", c0, 0)
+	if !supported {
+		return fmt.Errorf("pg: SASL: got %q, wanted %q", mechanisms, "SCRAM-SHA-256")
 	}
 
 	creds := sasl.Credentials(func() (Username, Password, Identity []byte) {
